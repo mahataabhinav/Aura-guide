@@ -22,7 +22,16 @@ export const BlueprintView: React.FC<Props> = ({ onSimulate }) => {
       if (!ctx) return;
 
       const stream = canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      
+      // Check supported MIME types
+      let mimeType = 'video/webm';
+      if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
       
       recorder.ondataavailable = (e) => {
@@ -30,7 +39,7 @@ export const BlueprintView: React.FC<Props> = ({ onSimulate }) => {
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
+        const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         
         onSimulate({

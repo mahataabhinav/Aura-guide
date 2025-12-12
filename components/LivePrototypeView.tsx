@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GeminiLiveService } from '../services/geminiLiveService';
 import { SYSTEM_INSTRUCTION_TEMPLATE } from '../constants';
 import { ConnectionStatus, HistorySnippet, TranscriptUpdate } from '../types';
-import { Mic, MicOff, Video, VideoOff, Power, Activity, Disc } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Power, Activity, Disc, SwitchCamera } from 'lucide-react';
 
 interface Props {
   apiKey: string;
@@ -15,6 +15,7 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [lastTranscript, setLastTranscript] = useState<string>("");
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -81,6 +82,33 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
     }
   };
 
+  const switchCamera = async () => {
+    if (status === ConnectionStatus.CONNECTED) {
+        // If live, we need to restart the stream
+        stopSession();
+        setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+        setTimeout(() => startSession(), 500);
+    } else {
+        setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    }
+  };
+
+  // Helper to find a supported mimeType for MediaRecorder
+  const getSupportedMimeType = () => {
+    const types = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4' // Critical for iOS/Safari
+    ];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
+    }
+    return ''; // Let browser choose default if none match
+  };
+
   const startSession = async () => {
     try {
       setStatus(ConnectionStatus.CONNECTING);
@@ -92,10 +120,23 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
       const inputContext = new AudioContext({ sampleRate: 16000 });
       
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: true, 
-        video: { width: 640, height: 480, frameRate: 15 } 
-      });
+      // Request camera with fallback logic
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: true, 
+            video: { 
+                width: 640, 
+                height: 480, 
+                frameRate: 15,
+                facingMode: facingMode 
+            } 
+        });
+      } catch (err) {
+         console.warn("Specific camera constraint failed, falling back to default video", err);
+         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      }
+
       streamRef.current = stream;
 
       recorderDestRef.current = audioContextRef.current.createMediaStreamDestination();
@@ -109,7 +150,10 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
         ]);
         
         try {
-            const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+            const mimeType = getSupportedMimeType();
+            const options = mimeType ? { mimeType } : undefined;
+            const recorder = new MediaRecorder(combinedStream, options);
+            
             recorder.ondataavailable = (e) => {
                 if (e.data.size > 0) recordedChunksRef.current.push(e.data);
             };
@@ -175,7 +219,8 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.onstop = () => {
-            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const mimeType = getSupportedMimeType() || 'video/webm';
+            const blob = new Blob(recordedChunksRef.current, { type: mimeType });
             const url = URL.createObjectURL(blob);
             const duration = (Date.now() - recordingStartTimeRef.current) / 1000;
             if (duration > 2) {
@@ -313,20 +358,27 @@ export const LivePrototypeView: React.FC<Props> = ({ apiKey, onSaveSnippet }) =>
       </button>
 
       {/* Bottom Controls */}
-      <div className="grid grid-cols-2 gap-4 mb-safe">
+      <div className="grid grid-cols-3 gap-3 mb-safe">
         <button 
             onClick={() => setIsMicOn(!isMicOn)}
-            className={`p-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 border transition-colors ${isMicOn ? 'bg-gray-900 border-gray-700 text-white hover:border-gray-500' : 'bg-red-900/50 border-red-600 text-red-100'}`}
+            className={`p-3 rounded-xl font-bold text-sm flex flex-col items-center justify-center gap-2 border transition-colors ${isMicOn ? 'bg-gray-900 border-gray-700 text-white hover:border-gray-500' : 'bg-red-900/50 border-red-600 text-red-100'}`}
         >
             {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-            {isMicOn ? "Microphone On" : "Microphone Off"}
+            {isMicOn ? "Mic On" : "Mic Off"}
         </button>
         <button 
             onClick={() => setIsVideoOn(!isVideoOn)}
-            className={`p-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 border transition-colors ${isVideoOn ? 'bg-gray-900 border-gray-700 text-white hover:border-gray-500' : 'bg-red-900/50 border-red-600 text-red-100'}`}
+            className={`p-3 rounded-xl font-bold text-sm flex flex-col items-center justify-center gap-2 border transition-colors ${isVideoOn ? 'bg-gray-900 border-gray-700 text-white hover:border-gray-500' : 'bg-red-900/50 border-red-600 text-red-100'}`}
         >
             {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-            {isVideoOn ? "Camera On" : "Camera Off"}
+            {isVideoOn ? "Cam On" : "Cam Off"}
+        </button>
+         <button 
+            onClick={switchCamera}
+            className="p-3 rounded-xl font-bold text-sm flex flex-col items-center justify-center gap-2 border bg-gray-900 border-gray-700 text-white hover:border-gray-500"
+        >
+            <SwitchCamera className="w-5 h-5" />
+            Flip Cam
         </button>
       </div>
 

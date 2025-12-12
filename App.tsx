@@ -3,7 +3,7 @@ import { BlueprintView } from './components/BlueprintView';
 import { LivePrototypeView } from './components/LivePrototypeView';
 import { HistoryView } from './components/HistoryView';
 import { AppMode, HistorySnippet } from './types';
-import { Layout, Eye, Accessibility, History, Key } from 'lucide-react';
+import { Layout, Eye, Accessibility, History, Key, ShieldCheck, Zap } from 'lucide-react';
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('');
@@ -17,11 +17,45 @@ const App: React.FC = () => {
 
   const checkApiKey = async () => {
     try {
+      // VITE_API_KEY must be accessed explicitly for the bundler to replace it.
+      // Dynamic access (e.g. import.meta.env[key]) does not work in Vite production builds.
+      let envKey = '';
+      
+      try {
+        // @ts-ignore
+        if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
+            // @ts-ignore
+            envKey = import.meta.env.VITE_API_KEY;
+        } 
+        // @ts-ignore
+        else if (import.meta && import.meta.env && import.meta.env.REACT_APP_API_KEY) {
+            // @ts-ignore
+            envKey = import.meta.env.REACT_APP_API_KEY;
+        }
+      } catch (err) {
+        // Ignore errors if import.meta is not defined
+      }
+
+      // Fallback to process.env for other build systems
+      if (!envKey && typeof process !== 'undefined' && process.env) {
+          envKey = process.env.VITE_API_KEY || process.env.REACT_APP_API_KEY || process.env.API_KEY || '';
+      }
+
+      if (envKey) {
+        console.log("Aura: API Key detected in environment variables.");
+        setApiKey(envKey);
+        setMode(AppMode.LIVE_PROTOTYPE);
+        setHasCheckedKey(true);
+        return;
+      }
+
+      // 2. Fallback to AI Studio (Development/Preview)
       if (window.aistudio && window.aistudio.hasSelectedApiKey) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         if (hasKey) {
-            const envKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
-            setApiKey(envKey || 'injected'); 
+            // In AI Studio, the key is often injected into process.env.API_KEY dynamically
+            const studioKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+            setApiKey(studioKey || 'injected'); 
         }
       }
     } catch (e) {
@@ -42,7 +76,7 @@ const App: React.FC = () => {
             alert("Could not select API key. Please try again.");
         }
     } else {
-        alert("This app requires the AI Studio environment with paid API keys.");
+        alert("Public Access: To use this app without signing in, the host must configure the 'VITE_API_KEY' environment variable in Netlify. (Checked: import.meta.env.VITE_API_KEY, process.env.VITE_API_KEY)");
     }
   };
 
@@ -54,7 +88,14 @@ const App: React.FC = () => {
     setHistory(prev => prev.filter(item => item.id !== id));
   };
 
-  if (!hasCheckedKey) return <div className="min-h-screen flex items-center justify-center bg-black text-white text-2xl font-bold">Loading Aura...</div>;
+  if (!hasCheckedKey) return (
+    <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+            <Eye className="w-12 h-12 text-yellow-500" />
+            <span className="text-xl font-bold tracking-widest uppercase text-gray-500">Initializing Aura...</span>
+        </div>
+    </div>
+  );
 
   const NavButton = ({ targetMode, icon: Icon, label }: { targetMode: AppMode, icon: any, label: string }) => (
     <button 
@@ -77,7 +118,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-black text-white font-sans flex flex-col">
       
       {/* Header - Desktop & Mobile */}
-      <header className="fixed top-0 left-0 right-0 bg-black/95 backdrop-blur-md border-b border-gray-800 z-50 h-16">
+      <header className="fixed top-0 left-0 right-0 bg-black/95 backdrop-blur-md border-b border-gray-800 z-50 h-16 transition-all duration-300">
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center shadow-lg shadow-yellow-500/20">
@@ -99,7 +140,7 @@ const App: React.FC = () => {
                 {!apiKey ? (
                     <button 
                         onClick={handleKeySelection}
-                        className="bg-yellow-500 text-black text-xs md:text-sm font-bold px-4 py-2 rounded-full hover:bg-yellow-400 transition-colors"
+                        className="bg-yellow-500 text-black text-xs md:text-sm font-bold px-4 py-2 rounded-full hover:bg-yellow-400 transition-colors shadow-[0_0_15px_-3px_rgba(234,179,8,0.3)]"
                     >
                         Connect Key
                     </button>
@@ -116,22 +157,62 @@ const App: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 pt-20 pb-24 md:pb-12 px-4 w-full max-w-6xl mx-auto overflow-x-hidden">
         {!apiKey ? (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 animate-fade-in">
-                <div className="w-24 h-24 bg-gray-900 rounded-3xl flex items-center justify-center border-4 border-gray-800 mb-4">
-                    <Key className="w-10 h-10 text-yellow-500" />
+            <div className="flex flex-col items-center justify-center min-h-[80vh] text-center space-y-12 animate-fade-in relative z-10 py-10">
+                {/* Hero Graphic */}
+                <div className="relative">
+                    <div className="absolute inset-0 bg-yellow-500 blur-[100px] opacity-10 rounded-full"></div>
+                    <div className="w-32 h-32 bg-gray-900 rounded-[2rem] flex items-center justify-center border-4 border-yellow-500/30 mb-4 relative z-10 shadow-2xl rotate-3 transform hover:rotate-0 transition-all duration-500">
+                        <Eye className="w-16 h-16 text-yellow-500" />
+                    </div>
                 </div>
-                <div className="space-y-4 max-w-md">
-                    <h2 className="text-3xl md:text-4xl font-bold text-white">Welcome to Aura</h2>
-                    <p className="text-gray-400 text-lg leading-relaxed">
-                        To activate high-bandwidth video processing and spatial reasoning, please connect a paid Google Cloud API Key.
+                
+                <div className="space-y-6 max-w-2xl">
+                    <h2 className="text-4xl md:text-6xl font-black text-white tracking-tight leading-tight">
+                        See the World <br/>
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-600">With New Eyes</span>
+                    </h2>
+                    <p className="text-gray-400 text-lg md:text-xl leading-relaxed font-medium max-w-lg mx-auto">
+                        Aura acts as a proactive spatial narrator, using Gemini's advanced multimodal reasoning to describe not just what is there, but <span className="text-white">what it means</span>.
                     </p>
                 </div>
-                <button 
-                    onClick={handleKeySelection}
-                    className="w-full max-w-xs bg-yellow-500 hover:bg-yellow-400 text-black px-8 py-4 rounded-xl font-bold text-xl shadow-xl shadow-yellow-900/20 transition-all active:scale-95"
-                >
-                    Connect API Key
-                </button>
+
+                {/* Feature Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl">
+                    <div className="bg-gray-900/40 backdrop-blur-sm p-6 rounded-2xl border border-gray-800 flex flex-col items-center gap-3 hover:bg-gray-800/60 transition-colors">
+                        <div className="bg-blue-900/30 p-3 rounded-xl">
+                            <Layout className="w-6 h-6 text-blue-400" />
+                        </div>
+                        <h3 className="font-bold text-white">Spatial Reasoning</h3>
+                        <p className="text-xs text-gray-500">Understands paths, blockages, and layout dynamics.</p>
+                    </div>
+                    <div className="bg-gray-900/40 backdrop-blur-sm p-6 rounded-2xl border border-gray-800 flex flex-col items-center gap-3 hover:bg-gray-800/60 transition-colors">
+                        <div className="bg-green-900/30 p-3 rounded-xl">
+                            <ShieldCheck className="w-6 h-6 text-green-400" />
+                        </div>
+                        <h3 className="font-bold text-white">Safety First</h3>
+                        <p className="text-xs text-gray-500">Proactive hazard warnings and clear path guidance.</p>
+                    </div>
+                    <div className="bg-gray-900/40 backdrop-blur-sm p-6 rounded-2xl border border-gray-800 flex flex-col items-center gap-3 hover:bg-gray-800/60 transition-colors">
+                        <div className="bg-purple-900/30 p-3 rounded-xl">
+                            <Zap className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <h3 className="font-bold text-white">Real-Time</h3>
+                        <p className="text-xs text-gray-500">Low latency audio streaming via Gemini Live API.</p>
+                    </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-4 w-full">
+                    <button 
+                        onClick={handleKeySelection}
+                        className="w-full max-w-sm bg-yellow-500 hover:bg-yellow-400 text-black px-8 py-5 rounded-2xl font-bold text-xl shadow-[0_0_40px_-10px_rgba(234,179,8,0.4)] transition-all active:scale-95 flex items-center justify-center gap-3 group"
+                    >
+                        <Key className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                        Connect API Key to Start
+                    </button>
+                    <p className="text-xs text-gray-600">
+                        Powered by Google Gemini 2.5 Flash • Live API
+                    </p>
+                </div>
             </div>
         ) : (
             <>
