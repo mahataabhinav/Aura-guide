@@ -1,0 +1,8 @@
+{
+  "name": "Copy of Aura Guide",
+  "description": "An accessible spatial narrator powered by Gemini Live API.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
